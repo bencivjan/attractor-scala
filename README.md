@@ -1,48 +1,45 @@
 # attractor-scala
 
-> *Where types compose and effects align,*
-> *where pipelines flow through graphs divine,*
-> *no nulls to fear, no threads to fight—*
-> *the compiler guards your code at night.*
-> *In monads wrapped, your futures bright,*
-> *Scala makes the Attractor right.*
+FOLKS. Step right up. Come on over. You are NOT gonna believe what I've got on the lot today.
 
-A Scala 3 implementation of the [Attractor specification](https://github.com/strongdm/attractor) — a DOT-based pipeline runner for orchestrating multi-stage AI workflows.
+You see that beauty right there? That's a **fully loaded, mint condition, Scala 3 Attractor** — and let me tell you, they do NOT make 'em like this anymore. Full [Attractor spec](https://github.com/strongdm/attractor) compliance. DOT-based pipeline orchestration. Multi-stage AI workflows. cats-effect under the hood. fs2 exhaust. Barely been driven — we're talkin' `0.1.0-SNAPSHOT` original miles.
 
-Attractor defines LLM pipelines as directed graphs in Graphviz DOT syntax. Nodes are tasks (LLM calls, human gates, parallel fan-outs), edges are transitions with conditions and weights, and the engine handles traversal, retries, checkpointing, and human interaction. This implementation covers the full spec using Scala 3, cats-effect, and fs2.
+My buddy over at the Go lot? Nice guy, great guy, but between you and me — he's out there selling runtime panics and `if err != nil` spaghetti. You want THAT headache? On YOUR weekend? I didn't think so.
 
-## Why Scala
+This baby here? **Zero** null pointer exceptions. I GUARANTEE it. The compiler won't LET you. You try to return a naked `null` and Scala looks you dead in the eye and says "absolutely not." That's not a feature, my friend. That's a LIFESTYLE.
 
-Scala is the strongest language choice for a pipeline orchestrator because it eliminates entire categories of bugs at compile time while providing the most expressive concurrency model available on the JVM.
+## Why Scala (Or As I Call It: "Why Settle For Less?")
 
-### Algebraic effects make concurrency correct by construction
+Look, I'm not gonna badmouth the competition. That's not my style. But I AM gonna tell you why every other implementation on this lot is yesterday's news.
 
-Pipeline orchestration is fundamentally about managing concurrent, effectful computations — LLM calls that may fail, human gates that block indefinitely, parallel fan-outs that must synchronize. cats-effect's `IO` monad makes every side effect explicit in the type signature. A handler that calls an LLM returns `IO[Outcome]`, not `Outcome` — the compiler enforces that callers handle the effectful nature of the operation. There is no way to accidentally fire-and-forget an LLM call or silently swallow an error. Resource safety (connections, file handles, subprocess lifecycles) is guaranteed by `Resource[IO, A]` with bracket semantics — cleanup runs even on cancellation or fiber failure.
+### You Want Concurrency? We Got Concurrency Coming Out The TAILPIPE
 
-### Streaming pipelines with backpressure
+Other orchestrators out there juggling goroutines, praying nothing races, crossing their fingers at 3 AM. Not this one. cats-effect `IO` monad means every single side effect is RIGHT THERE in the type signature. `IO[Outcome]` — you see that? That's a PROMISE. The compiler ENFORCES it. You literally CANNOT fire-and-forget an LLM call. You cannot silently swallow an error. I've tried! It won't let you! `Resource[IO, A]` with bracket semantics — cleanup runs even if your fiber gets cancelled mid-flight. That's the kind of safety you cannot BUY at the Go dealership. Well, you can't buy it because they don't HAVE it.
 
-fs2 streams are pull-based and resource-safe. When the engine streams events to a frontend, backpressure propagates automatically — a slow consumer doesn't cause unbounded memory growth. Parallel handler branches use `fs2.Stream.parEvalMapUnordered` with bounded concurrency, and each branch gets an isolated context snapshot via immutable case class copying. No locks, no shared mutable state, no defensive cloning — the type system prevents data races at compile time.
+### Streams That Won't Blow Up Your Memory (UNLIKE SOME IMPLEMENTATIONS I WON'T NAME)
 
-### Exhaustive pattern matching eliminates edge selection bugs
+fs2 streams. Pull-based. Resource-safe. Backpressure propagates AUTOMATICALLY. Your slow frontend consumer? No problem. Unbounded memory growth? Not on MY lot. Parallel handler branches get isolated context snapshots via immutable case class copying. No locks. No shared mutable state. No defensive cloning. The type system prevents data races at COMPILE TIME. I see you looking at that Go implementation across the street with its `sync.RWMutex` — put the brochure down. You deserve better.
 
-The 5-step edge selection algorithm is the heart of the engine. In Scala, the outcome type is a sealed trait — the compiler verifies that every case is handled. Missing a branch is a compile error, not a runtime surprise. Combined with `Option` for nullable fields (no null checks scattered through handler code) and `Either` for parse results (no exception-based control flow), the type system catches the exact class of bugs that pipeline orchestrators are most vulnerable to: unhandled states, missing conditions, and silent failures.
+### Pattern Matching That Catches EVERY Bug Before Your Users Do
 
-### Immutable data structures prevent checkpoint corruption
+The 5-step edge selection algorithm? Heart of the engine. In Scala, that outcome type is a sealed trait — miss a case and the compiler REFUSES to build. That's not a warning, that's a HARD STOP. `Option` instead of null. `Either` instead of exceptions. Every unhandled state, every missing condition, every silent failure — caught at compile time. The Go version finds these at 2 AM in production. We find them before you push. Which one sounds better to YOU?
 
-Pipeline state is represented as immutable case classes. Context propagation through the graph creates new snapshots — there is no mutable state to corrupt during concurrent execution. Checkpoints serialize cleanly because the data is already values, not references to shared mutable objects. Resume from checkpoint is a function call, not a reconstruction of mutable state.
+### Immutable Data — Because Mutable State Is a LEMON
 
-### Zero-boilerplate extensibility
+Pipeline state? Immutable case classes. Context propagation creates new snapshots. There is physically, mathematically, IMPOSSIBLE-ly no mutable state to corrupt during concurrent execution. Checkpoints serialize clean because the data is values, not references to some shared object that twelve goroutines are fighting over. Your Go buddy is out there doing JSON marshal/unmarshal for deep copies — and he ADMITS it's slow! We just... copy the case class. It's free. It's correct. It's BEAUTIFUL.
 
-New handlers implement a single trait method:
+### Extensibility With ZERO Boilerplate (I'm Practically GIVING This Away)
+
+You want a new handler? One trait method:
 
 ```scala
 trait Handler:
   def execute(node: Node, context: Context, graph: Graph, logsRoot: String): IO[Outcome]
 ```
 
-New lint rules implement `LintRule` with `def apply(graph: Graph): List[Diagnostic]`. Custom transforms, LLM providers, and interviewer modes all follow the same pattern — a trait with a single abstract method. Scala's given instances and extension methods allow type class-based extensibility without inheritance hierarchies or runtime reflection.
+That's it. That's the whole thing. No reflection, no annotation processing, no dependency injection framework that needs its own README. Lint rules? Same deal. Transforms? Same deal. LLM providers? You guessed it. Scala's given instances and extension methods give you type class extensibility without inheritance hierarchies. The Go version has you wiring up `map[string]Handler` by hand like it's 2009. Come ON.
 
-## Architecture
+## What's Under The Hood (Pop It Open, Take a Look, I've Got Nothing To Hide)
 
 ```
 attractor-scala/
@@ -72,39 +69,40 @@ attractor-scala/
 └── build.sbt
 ```
 
-### How a pipeline runs
+Go ahead, kick the tires. Look at that architecture. THREE modules, each one a gem. You're not gonna find this kind of craftsmanship at the Python lot, I'll tell you that much.
 
-1. **Parse** — The DOT parser strips comments, tokenizes (handling quoted strings, qualified identifiers, hyphenated names), and builds a `Graph` via recursive descent. Parse errors are `Either[String, Graph]` — no exceptions.
-2. **Transform** — Variable expansion replaces `$goal` in prompts. The stylesheet transform applies CSS-like model rules with specificity cascade (universal < class < ID).
-3. **Validate** — 12 lint rules check structural correctness (start/exit nodes, reachability via BFS, edge targets), semantic validity (condition syntax, retry targets), and conventions (type names, fidelity modes). Errors block execution; warnings don't.
-4. **Execute** — The engine traverses from the start node. Each node's handler is resolved from the registry, executed within `IO` with retry policy, and the outcome drives edge selection through a deterministic 5-step algorithm.
-5. **Checkpoint** — After each node, state is atomically saved. Resume restores context, completed nodes, and retry counters. Goal gates are enforced before exit.
+### How a pipeline runs (FIVE stages of PURE ENGINEERING BLISS)
 
-### Edge selection
+1. **Parse** — The DOT parser strips comments, tokenizes, and builds a `Graph` via recursive descent. Parse errors? `Either[String, Graph]`. No exceptions. No surprises. No "oh it worked on my machine."
+2. **Transform** — Variable expansion replaces `$goal` in prompts. Stylesheet transforms apply CSS-like model rules with specificity cascade. It's like a spa day for your pipeline graph.
+3. **Validate** — 12 lint rules. TWELVE. Structural correctness, semantic validity, convention checking. Errors block execution. Warnings don't. This thing is THOROUGH.
+4. **Execute** — The engine traverses from start. Handlers resolve from the registry, execute within `IO` with retry policy, and outcomes drive edge selection through a DETERMINISTIC 5-step algorithm. No coin flips. No vibes. Math.
+5. **Checkpoint** — After each node, state is atomically saved. Resume from crash? Function call. Goal gates enforced before exit. This thing takes care of ITSELF.
+
+### Edge Selection (The Secret Sauce — Don't Tell The Go Lot I Showed You This)
 
 After a node completes, outgoing edges are evaluated in strict priority order:
 
-1. **Condition match** — Edges with `condition` expressions that evaluate to true against the current context and outcome
-2. **Preferred label** — If the outcome suggests a label, match it (normalized: lowercase, trimmed)
+1. **Condition match** — Edges with `condition` expressions that evaluate to true
+2. **Preferred label** — Outcome suggests a label? We match it. Normalized, lowercase, trimmed. Professional.
 3. **Suggested next IDs** — Explicit node IDs from the outcome
-4. **Highest weight** — Among unconditional edges, highest `weight` wins
-5. **Lexical tiebreak** — Alphabetical by target node ID
+4. **Highest weight** — Unconditional edges? Highest weight wins
+5. **Lexical tiebreak** — Alphabetical. Because even our tiebreakers are DETERMINISTIC
 
-## Unified LLM Client
+## The LLM Client (Three Providers, ONE Interface, NO Headaches)
 
-The `unified-llm` module provides a single interface across LLM providers, built on http4s and circe for type-safe HTTP and JSON handling.
+The `unified-llm` module talks to Anthropic, OpenAI, AND Gemini through a single type-safe interface. Built on http4s and circe because we're not ANIMALS.
 
-Key capabilities:
-- **Streaming with tool loops** — `Stream` pauses on tool calls, executes them via `IO`, and resumes. `Generate` runs blocking tool loops up to `maxToolRounds`.
-- **Structured output** — `GenerateObject` validates responses against JSON schemas with fallback markdown fence extraction.
-- **Middleware** — Composable request/response interceptors for logging, metrics, or request modification.
-- **Unified types** — Messages, content blocks (text, image, audio, document, tool calls, thinking), and usage tracking work identically across Anthropic, OpenAI, and Gemini.
+- **Streaming with tool loops** — Pauses on tool calls, executes them in `IO`, resumes. Automatic. Seamless. Chef's kiss.
+- **Structured output** — JSON schema validation with fallback markdown fence extraction. Belt AND suspenders.
+- **Middleware** — Composable interceptors for logging, metrics, you name it. Stack 'em up like pancakes.
+- **Unified types** — Messages, content blocks, usage tracking — all identical across all three providers. Write it once. Run it everywhere. Where have I heard that before? Oh right — but this time it actually WORKS.
 
-## Included Pipelines
+## Included Pipelines (TWO Pipelines, No Extra Charge, TODAY ONLY)
 
 ### Plan-Build-Verify (`developer.dot`)
 
-A four-stage software development pipeline: high-level planning (Claude Opus) → sprint breakdown (Claude Opus) → implementation (Codex) → QA verification (Claude Opus). QA failure loops back to implementation with feedback. Goal gates ensure quality before exit.
+A four-stage software development pipeline: planning (Claude Opus) -> sprint breakdown (Claude Opus) -> implementation (Codex) -> QA verification (Claude Opus). QA fails? Loops RIGHT back to implementation with feedback. Goal gates ensure nothing leaves this lot that isn't QUALITY.
 
 ```mermaid
 flowchart TD
@@ -127,13 +125,13 @@ flowchart TD
 
 ### Evaluator (`evaluator.dot`)
 
-A four-stage evaluation pipeline for reviewing submissions against a project vision: orchestration (Claude Opus) → tool building (Codex) → QA testing (Claude Opus) → visionary judgment (Claude Opus). The visionary maintains the high-level goal and returns structured, actionable feedback.
+Four-stage evaluation pipeline: orchestration -> tool building -> QA testing -> visionary judgment. The visionary holds the high-level goal and hands back structured, actionable feedback. It's like having a senior architect on call 24/7 except this one doesn't take PTO.
 
-## Getting Started
+## Drive It Off The Lot Today (Getting Started)
 
 ### Prerequisites
 
-- JDK 17+
+- JDK 17+ (you've got that, right? Of COURSE you do, you're a professional)
 - [sbt](https://www.scala-sbt.org/) 1.10+
 
 ### Build
@@ -148,7 +146,7 @@ sbt compile
 sbt test
 ```
 
-### Run a pipeline
+### Take it for a spin
 
 ```scala
 import ai.attractor.pipeline.pipelines.Pipelines
@@ -161,9 +159,11 @@ val outcome = PipelineRunner.fromDotSource(
 )
 ```
 
-## Spec Compliance
+Three lines. THREE LINES and you're running a full AI pipeline. The Go version needs you to instantiate a registry, wire up handlers, configure a runner... by the time you're done setting up, my customer here has already shipped to production. TWICE.
 
-This implementation covers the full [Attractor specification](https://github.com/strongdm/attractor), including:
+## Full Spec Compliance (We Don't Cut Corners Here)
+
+This implementation covers the COMPLETE [Attractor specification](https://github.com/strongdm/attractor). Every. Single. Feature:
 
 - Complete DOT subset parser with chained edges, subgraphs, default blocks, and multi-line attributes
 - All 8 built-in handler types (start, exit, codergen, wait.human, conditional, parallel, fan-in, tool, manager loop)
@@ -178,3 +178,7 @@ This implementation covers the full [Attractor specification](https://github.com
 - Human-in-the-loop via Interviewer abstraction
 - Context fidelity modes
 - Event streaming for pipeline lifecycle observability
+
+Now I know what you're thinking. "This seems too good to be true." I get it. I hear that every day. But look — I'm gonna level with you. This is the real deal. Full spec. Type-safe. Battle-ready. And I'm not even gonna ask you to sign an extended warranty.
+
+So what do you say? `git clone`? I'll even throw in free parking in your `~/.sbt/` directory.
