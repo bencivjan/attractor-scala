@@ -1,0 +1,112 @@
+// Plan-Build-Verify Pipeline
+//
+// A four-stage software development pipeline that uses LLMs to plan,
+// decompose, implement, and verify a project or feature.
+//
+// Stages:
+//   1. High-Level Plan     (Claude Opus)  — architecture and strategy
+//   2. Sprint Breakdown    (Claude Opus)  — decompose into sprint-sized work
+//   3. Implement           (Codex)        — write production code
+//   4. QA Verification     (Claude Opus)  — verify implementation matches plans
+//
+// On QA failure the pipeline loops back to implementation with feedback.
+
+digraph plan_build_verify {
+    goal = "Plan, implement, and verify a software project or feature"
+    label = "Plan-Build-Verify Pipeline"
+    default_max_retry = "3"
+    fallback_retry_target = "sprint_breakdown"
+
+    model_stylesheet = "
+        * {
+            reasoning_effort: high;
+        }
+    "
+
+    // -----------------------------------------------------------------------
+    // Start
+    // -----------------------------------------------------------------------
+    start [shape=Mdiamond, label="Begin"]
+
+    // -----------------------------------------------------------------------
+    // Phase 1 — High-Level Planning (Claude Opus)
+    //
+    // Produces architecture, component breakdown, and implementation strategy.
+    // This is the foundation the rest of the pipeline builds on.
+    // -----------------------------------------------------------------------
+    high_level_plan [
+        label       = "High-Level Plan"
+        prompt      = "You are a senior software architect. Create a high-level overall plan for the project/feature described in $goal.\n\nYour plan must include:\n1. Requirements analysis — what needs to be built and why\n2. Architecture overview — major components and how they interact\n3. Technical decisions — languages, frameworks, patterns, data models\n4. Implementation strategy — phased approach with dependencies\n5. Risk assessment — what could go wrong and mitigations\n6. Definition of done — clear success criteria\n\nOutput a structured plan document. Be thorough but concise."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 2 — Sprint Breakdown (Claude Opus)
+    //
+    // Decomposes the high-level plan into sprint-sized units of work.
+    // Each sprint has clear scope, inputs, outputs, and acceptance criteria.
+    // No code — purely planning.
+    // -----------------------------------------------------------------------
+    sprint_breakdown [
+        label       = "Sprint Breakdown"
+        prompt      = "You are a technical project manager. Given the high-level plan in context, break it down into smaller, sprint-sized plans.\n\nFor each sprint produce:\n1. Sprint goal — one sentence describing what this sprint delivers\n2. Scope — specific items to build (files, functions, APIs, tests)\n3. Inputs — what must exist before this sprint starts\n4. Outputs — concrete deliverables produced\n5. Acceptance criteria — how to verify the sprint is complete\n6. Dependencies — which other sprints must finish first\n\nDo NOT include code. Focus on describing what needs to be built, the approach, and expected behavior. Order sprints by dependency so they can be executed sequentially."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 3 — Implementation (Codex)
+    //
+    // Writes production-ready code following the sprint definitions.
+    // Uses OpenAI Codex for fast, high-quality code generation.
+    // -----------------------------------------------------------------------
+    implement [
+        label       = "Implement Code"
+        prompt      = "You are a senior software engineer. Implement the sprint plans from context as production-ready code.\n\nFor each sprint:\n1. Write clean, idiomatic code that satisfies every acceptance criterion\n2. Include unit tests for all public interfaces\n3. Follow the architecture and patterns from the high-level plan\n4. Add brief inline comments only where the logic is non-obvious\n5. Handle errors properly at system boundaries\n\nOutput all code files with their full paths. Do not skip any sprint."
+        model       = "gpt-5.3-codex"
+        llm_provider = "openai"
+        goal_gate   = "true"
+        max_retries = "3"
+        retry_target = "implement"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 4 — QA Verification (Claude Opus)
+    //
+    // Reviews the implementation against both the sprint plans and the
+    // high-level plan. Acts as a conditional gate: passes or fails.
+    // -----------------------------------------------------------------------
+    qa_verify [
+        shape       = "diamond"
+        type        = "conditional"
+        label       = "QA Verification"
+        prompt      = "You are a QA lead and code reviewer. Verify that the implementation matches both the sprint plans and the high-level plan.\n\nCheck each of the following:\n1. Sprint coverage — every sprint's acceptance criteria are met\n2. Architectural alignment — code follows the high-level plan's architecture\n3. Correctness — logic is sound, edge cases handled, no obvious bugs\n4. Completeness — no sprints skipped, no partial implementations\n5. Code quality — readable, maintainable, properly tested\n\nIf ALL checks pass: respond with status SUCCESS.\nIf ANY check fails: respond with status FAIL and list every specific issue found, referencing the sprint and acceptance criterion that was violated."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Exit
+    // -----------------------------------------------------------------------
+    exit [shape=Msquare, label="Done"]
+
+    // -----------------------------------------------------------------------
+    // Edges
+    // -----------------------------------------------------------------------
+    start           -> high_level_plan
+    high_level_plan -> sprint_breakdown
+    sprint_breakdown -> implement
+    implement       -> qa_verify
+
+    // QA gate: pass exits, fail loops back to implementation with feedback.
+    qa_verify -> exit      [condition="outcome=success",          label="QA Passed",  weight="10"]
+    qa_verify -> exit      [condition="outcome=partial_success",  label="QA Passed (partial)", weight="5"]
+    qa_verify -> implement [condition="outcome=fail",             label="QA Failed",  weight="10", loop_restart="true"]
+}

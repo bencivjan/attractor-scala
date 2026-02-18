@@ -1,0 +1,117 @@
+// Evaluator Pipeline
+//
+// A four-stage evaluation pipeline that reviews submissions against a
+// high-level vision. An orchestrator delegates work, a builder constructs
+// the testing tools, QA exercises those tools, and a visionary judges
+// whether the result satisfies the original goal.
+//
+// Stages:
+//   1. Orchestrator   (Claude Opus)  — receive submission, delegate tasks
+//   2. Builder        (Codex 5.3)    — build tools/harnesses for QA
+//   3. QA             (Claude Opus)  — run tools against the submission
+//   4. Visionary      (Claude Opus)  — judge against goal, return feedback
+//
+// On visionary rejection the pipeline loops back to the submitter with
+// actionable feedback.
+
+digraph evaluator {
+    goal = "Evaluate a submission against the project vision and return structured feedback"
+    label = "Evaluator Pipeline"
+    default_max_retry = "3"
+    fallback_retry_target = "builder"
+
+    model_stylesheet = "
+        * {
+            reasoning_effort: high;
+        }
+    "
+
+    // -----------------------------------------------------------------------
+    // Start
+    // -----------------------------------------------------------------------
+    start [shape=Mdiamond, label="Submission Received"]
+
+    // -----------------------------------------------------------------------
+    // Phase 1 — Orchestrator (Claude Opus)
+    //
+    // Receives the submission and the project vision. Analyzes what needs
+    // to be evaluated, then produces a delegation plan: what tools the
+    // builder should create and what aspects QA should verify.
+    // -----------------------------------------------------------------------
+    orchestrator [
+        label       = "Orchestrator"
+        prompt      = "You are an evaluation orchestrator. You have received a submission and the project's high-level vision in $goal.\n\nYour job:\n1. Understand the submission — what was built, what changed, what claims are made\n2. Understand the vision — what the project is supposed to achieve\n3. Identify evaluation dimensions — correctness, completeness, alignment with vision, quality\n4. Produce a delegation plan with two sections:\n   a. BUILDER TASKS — specific tools, test harnesses, scripts, or fixtures the builder must create so QA can exercise the submission (e.g. integration tests, load generators, mock servers, CLI wrappers)\n   b. QA CHECKLIST — specific checks QA must perform using those tools, each tied to a success criterion from the vision\n\nBe precise. Every builder task must have a clear purpose and every QA check must be verifiable."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 2 — Builder (Codex 5.3)
+    //
+    // Constructs the tools, test harnesses, and fixtures that QA needs to
+    // evaluate the submission. Does not judge quality — only builds what
+    // the orchestrator requested.
+    // -----------------------------------------------------------------------
+    builder [
+        label       = "Builder"
+        prompt      = "You are a toolsmith. Given the orchestrator's delegation plan in context, build every tool and harness listed under BUILDER TASKS.\n\nFor each tool:\n1. Write clean, runnable code that QA can invoke directly\n2. Include clear usage instructions (CLI flags, env vars, expected inputs/outputs)\n3. Handle setup and teardown so tools are self-contained\n4. Output structured results (JSON or plain-text with parseable markers) so QA can programmatically check outcomes\n5. Cover edge cases mentioned in the delegation plan\n\nDo NOT evaluate the submission yourself. Your only job is to produce the tools QA will use."
+        model       = "gpt-5.3-codex"
+        llm_provider = "openai"
+        goal_gate   = "true"
+        max_retries = "3"
+        retry_target = "builder"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 3 — QA (Claude Opus)
+    //
+    // Exercises the builder's tools against the submission, following the
+    // orchestrator's QA checklist. Produces a structured evaluation report.
+    // -----------------------------------------------------------------------
+    qa [
+        label       = "QA"
+        prompt      = "You are a QA engineer. Using the tools built by the builder and the QA CHECKLIST from the orchestrator, evaluate the submission.\n\nFor each checklist item:\n1. Run the relevant tool or harness against the submission\n2. Record the raw output\n3. Determine PASS or FAIL with a brief justification\n4. Note any unexpected behavior, even if the check passes\n\nProduce a structured evaluation report with:\n- Summary — overall pass/fail count and health assessment\n- Per-check results — checklist item, tool used, outcome, evidence\n- Observations — anything noteworthy not covered by the checklist\n\nBe objective. Report what happened, not what you think should happen."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 4 — Visionary (Claude Opus)
+    //
+    // Holds the high-level project vision. Reads the QA report and judges
+    // whether the submission fulfills the vision. On failure, produces
+    // actionable feedback for the submitter.
+    // -----------------------------------------------------------------------
+    visionary [
+        shape       = "diamond"
+        type        = "conditional"
+        label       = "Visionary"
+        prompt      = "You are the visionary — the keeper of the project's high-level goal described in $goal. You have the QA evaluation report in context.\n\nYour job is to judge the submission against the vision, not just the checklist:\n1. Vision alignment — does the submission move the project toward its goal?\n2. Completeness — are there gaps between what was delivered and what the vision requires?\n3. Quality bar — does the work meet the standard the vision implies?\n4. Regression — does the submission break or weaken anything that previously worked?\n\nIf the submission SATISFIES the vision: respond with status SUCCESS and a brief summary of what was achieved.\nIf the submission FALLS SHORT: respond with status FAIL and provide structured feedback:\n   a. What specifically is missing or wrong (reference QA evidence)\n   b. Why it matters to the vision\n   c. Concrete suggestions for what the submitter should do next\n\nYour feedback will be returned directly to the submitter, so make it actionable and constructive."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Exit
+    // -----------------------------------------------------------------------
+    exit [shape=Msquare, label="Evaluation Complete"]
+
+    // -----------------------------------------------------------------------
+    // Edges
+    // -----------------------------------------------------------------------
+    start        -> orchestrator
+    orchestrator -> builder
+    builder      -> qa
+    qa           -> visionary
+
+    // Visionary gate: pass exits with approval, fail returns feedback to submitter.
+    visionary -> exit      [condition="outcome=success",          label="Approved",          weight="10"]
+    visionary -> exit      [condition="outcome=partial_success",  label="Approved (partial)", weight="5"]
+    visionary -> exit      [condition="outcome=fail",             label="Rejected",          weight="10"]
+}
