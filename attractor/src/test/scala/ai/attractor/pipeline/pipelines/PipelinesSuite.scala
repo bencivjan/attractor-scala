@@ -90,6 +90,37 @@ class PipelinesSuite extends FunSuite:
     assert(errors.isEmpty, s"evaluator pipeline has validation errors: ${errors.map(_.message).mkString("; ")}")
   }
 
+  test("evaluator pipeline has expected nodes") {
+    val graph = DotParser.parse(Pipelines.get("evaluator").get).toOption.get
+    val expectedNodes = List("start", "orchestrator", "builder", "qa", "visionary", "exit")
+    for id <- expectedNodes do
+      assert(graph.nodes.contains(id), s"expected node '$id' not found in evaluator graph")
+  }
+
+  test("evaluator pipeline edge structure with retry loop") {
+    val graph = DotParser.parse(Pipelines.get("evaluator").get).toOption.get
+
+    // Main flow
+    val expectedEdges = List(
+      ("start", "orchestrator"),
+      ("orchestrator", "builder"),
+      ("builder", "qa"),
+      ("qa", "visionary")
+    )
+    for (from, to) <- expectedEdges do
+      val found = graph.edges.exists(e => e.from == from && e.to == to)
+      assert(found, s"expected edge $from -> $to not found")
+
+    // Visionary -> exit (approval)
+    val visionaryToExit = graph.edges.filter(e => e.from == "visionary" && e.to == "exit")
+    assert(visionaryToExit.nonEmpty, "expected visionary -> exit edge")
+
+    // Visionary -> orchestrator (retry loop for insufficient evaluation)
+    val visionaryToOrchestrator = graph.edges.filter(e => e.from == "visionary" && e.to == "orchestrator")
+    assert(visionaryToOrchestrator.nonEmpty, "expected visionary -> orchestrator retry edge")
+    assertEquals(visionaryToOrchestrator.head.condition, "outcome=retry")
+  }
+
   test("get returns None for unknown pipeline") {
     assertEquals(Pipelines.get("nonexistent_pipeline"), None)
   }

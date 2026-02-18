@@ -11,8 +11,8 @@
 //   3. QA             (Claude Opus)  — run tools against the submission
 //   4. Visionary      (Claude Opus)  — judge against goal, return feedback
 //
-// On visionary rejection the pipeline loops back to the submitter with
-// actionable feedback.
+// On visionary rejection the pipeline loops back to the orchestrator with
+// feedback so it can refine its delegation plan and re-run builder + QA.
 
 digraph evaluator {
     goal = "Evaluate a submission against the project vision and return structured feedback"
@@ -40,7 +40,7 @@ digraph evaluator {
     // -----------------------------------------------------------------------
     orchestrator [
         label       = "Orchestrator"
-        prompt      = "You are an evaluation orchestrator. You have received a submission and the project's high-level vision in $goal.\n\nYour job:\n1. Understand the submission — what was built, what changed, what claims are made\n2. Understand the vision — what the project is supposed to achieve\n3. Identify evaluation dimensions — correctness, completeness, alignment with vision, quality\n4. Produce a delegation plan with two sections:\n   a. BUILDER TASKS — specific tools, test harnesses, scripts, or fixtures the builder must create so QA can exercise the submission (e.g. integration tests, load generators, mock servers, CLI wrappers)\n   b. QA CHECKLIST — specific checks QA must perform using those tools, each tied to a success criterion from the vision\n\nBe precise. Every builder task must have a clear purpose and every QA check must be verifiable."
+        prompt      = "You are an evaluation orchestrator. You have received a submission and the project's high-level vision in $goal.\n\nIf this is a fresh evaluation, start from scratch. If the visionary has returned feedback from a previous evaluation round, you MUST incorporate that feedback — the visionary's concerns take priority. Adjust your delegation plan to address every issue the visionary raised. Do not repeat evaluation approaches that already failed to surface the right information.\n\nYour job:\n1. Understand the submission — what was built, what changed, what claims are made\n2. Understand the vision — what the project is supposed to achieve\n3. If visionary feedback exists, understand what was unclear or insufficient in the previous evaluation and why\n4. Identify evaluation dimensions — correctness, completeness, alignment with vision, quality\n5. Produce a delegation plan with two sections:\n   a. BUILDER TASKS — specific tools, test harnesses, scripts, or fixtures the builder must create so QA can exercise the submission (e.g. integration tests, load generators, mock servers, CLI wrappers)\n   b. QA CHECKLIST — specific checks QA must perform using those tools, each tied to a success criterion from the vision\n\nBe precise. Every builder task must have a clear purpose and every QA check must be verifiable."
         model       = "claude-opus-4-6"
         llm_provider = "anthropic"
         goal_gate   = "true"
@@ -90,7 +90,7 @@ digraph evaluator {
         shape       = "diamond"
         type        = "conditional"
         label       = "Visionary"
-        prompt      = "You are the visionary — the keeper of the project's high-level goal described in $goal. You have the QA evaluation report in context.\n\nYour job is to judge the submission against the vision, not just the checklist:\n1. Vision alignment — does the submission move the project toward its goal?\n2. Completeness — are there gaps between what was delivered and what the vision requires?\n3. Quality bar — does the work meet the standard the vision implies?\n4. Regression — does the submission break or weaken anything that previously worked?\n\nIf the submission SATISFIES the vision: respond with status SUCCESS and a brief summary of what was achieved.\nIf the submission FALLS SHORT: respond with status FAIL and provide structured feedback:\n   a. What specifically is missing or wrong (reference QA evidence)\n   b. Why it matters to the vision\n   c. Concrete suggestions for what the submitter should do next\n\nYour feedback will be returned directly to the submitter, so make it actionable and constructive."
+        prompt      = "You are the visionary — the keeper of the project's high-level goal described in $goal. You have the QA evaluation report in context.\n\nYour job is to judge the submission against the vision, not just the checklist:\n1. Vision alignment — does the submission move the project toward its goal?\n2. Completeness — are there gaps between what was delivered and what the vision requires?\n3. Quality bar — does the work meet the standard the vision implies?\n4. Regression — does the submission break or weaken anything that previously worked?\n5. Evaluation quality — was the evaluation itself sufficient? Did the QA checklist and tools actually test the right things, or did the orchestrator miss critical dimensions?\n\nIf the submission SATISFIES the vision: respond with status SUCCESS and a brief summary of what was achieved.\n\nIf the EVALUATION ITSELF was insufficient (wrong tools, missing checks, unclear results, didn't test what matters to the vision): respond with status RETRY and provide feedback for the orchestrator:\n   a. What the evaluation failed to cover or got wrong\n   b. What dimensions the orchestrator should focus on in the next round\n   c. Specific tools or checks that should be added, changed, or removed\n   This feedback goes back to the orchestrator to refine the delegation plan.\n\nIf the submission FALLS SHORT and the evaluation was thorough: respond with status FAIL and provide structured feedback for the submitter:\n   a. What specifically is missing or wrong (reference QA evidence)\n   b. Why it matters to the vision\n   c. Concrete suggestions for what the submitter should do next"
         model       = "claude-opus-4-6"
         llm_provider = "anthropic"
         goal_gate   = "true"
@@ -110,8 +110,12 @@ digraph evaluator {
     builder      -> qa
     qa           -> visionary
 
-    // Visionary gate: pass exits with approval, fail returns feedback to submitter.
-    visionary -> exit      [condition="outcome=success",          label="Approved",          weight="10"]
-    visionary -> exit      [condition="outcome=partial_success",  label="Approved (partial)", weight="5"]
-    visionary -> exit      [condition="outcome=fail",             label="Rejected",          weight="10"]
+    // Visionary gate:
+    //   - success exits with approval
+    //   - retry loops back to orchestrator (evaluation was insufficient)
+    //   - fail exits with rejection feedback for the submitter
+    visionary -> exit         [condition="outcome=success",          label="Approved",              weight="10"]
+    visionary -> exit         [condition="outcome=partial_success",  label="Approved (partial)",     weight="5"]
+    visionary -> orchestrator [condition="outcome=retry",            label="Refine Evaluation",      weight="10"]
+    visionary -> exit         [condition="outcome=fail",             label="Rejected",              weight="10"]
 }

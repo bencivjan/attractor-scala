@@ -107,10 +107,10 @@ A four-stage software development pipeline: planning (Claude Opus) -> sprint bre
 ```mermaid
 flowchart TD
     start(["Begin"])
-    plan["High-Level Plan<br/><i>claude-opus-4-6</i>"]
-    sprints["Sprint Breakdown<br/><i>claude-opus-4-6</i>"]
-    impl["Implement Code<br/><i>gpt-5.3-codex</i>"]
-    qa{"QA Verification<br/><i>claude-opus-4-6</i>"}
+    plan["<b>1. High-Level Plan</b><br/><i>claude-opus-4-6</i><br/>Architecture & strategy"]
+    sprints["<b>2. Sprint Breakdown</b><br/><i>claude-opus-4-6</i><br/>Decompose into sprints"]
+    impl["<b>3. Implement Code</b><br/><i>gpt-5.3-codex</i><br/>Write production code"]
+    qa{"<b>4. QA Verification</b><br/><i>claude-opus-4-6</i><br/>Verify vs. plans"}
     done(["Done"])
 
     start --> plan
@@ -118,14 +118,48 @@ flowchart TD
     sprints --> impl
     impl --> qa
 
-    qa -- "QA Passed" --> done
-    qa -- "QA Passed (partial)" --> done
-    qa -. "QA Failed (loop_restart)" .-> impl
+    qa -- "outcome=success<br/>QA Passed" --> done
+    qa -- "outcome=partial_success<br/>QA Passed (partial)" --> done
+    qa -. "outcome=fail<br/>QA Failed (loop_restart)" .-> impl
+
+    style start fill:#2d6a4f,stroke:#1b4332,color:#fff
+    style done fill:#2d6a4f,stroke:#1b4332,color:#fff
+    style plan fill:#264653,stroke:#1d3557,color:#fff
+    style sprints fill:#264653,stroke:#1d3557,color:#fff
+    style impl fill:#e76f51,stroke:#c1440e,color:#fff
+    style qa fill:#e9c46a,stroke:#d4a017,color:#000
 ```
 
 ### Evaluator (`evaluator.dot`)
 
-Four-stage evaluation pipeline: orchestration -> tool building -> QA testing -> visionary judgment. The visionary holds the high-level goal and hands back structured, actionable feedback. It's like having a senior architect on call 24/7 except this one doesn't take PTO.
+Four-stage evaluation pipeline: orchestration -> tool building -> QA testing -> visionary judgment. The visionary holds the high-level goal and hands back structured, actionable feedback. It's like having a senior architect on call 24/7 except this one doesn't take PTO. And NOW — fresh off the Go lot — the visionary can loop BACK to the orchestrator when the evaluation itself wasn't good enough. That's right, this pipeline doesn't just evaluate your code, it evaluates its OWN evaluation. Meta-quality. You cannot GET this at the Python dealership.
+
+```mermaid
+flowchart TD
+    start(["Submission Received"])
+    orch["<b>1. Orchestrator</b><br/><i>claude-opus-4-6</i><br/>Delegate evaluation tasks"]
+    build["<b>2. Builder</b><br/><i>gpt-5.3-codex</i><br/>Build test tools & harnesses"]
+    qa["<b>3. QA</b><br/><i>claude-opus-4-6</i><br/>Run tools, produce report"]
+    vis{"<b>4. Visionary</b><br/><i>claude-opus-4-6</i><br/>Judge against vision"}
+    done(["Evaluation Complete"])
+
+    start --> orch
+    orch --> build
+    build --> qa
+    qa --> vis
+
+    vis -- "outcome=success<br/>Approved" --> done
+    vis -- "outcome=partial_success<br/>Approved (partial)" --> done
+    vis -. "outcome=retry<br/>Refine Evaluation" .-> orch
+    vis -- "outcome=fail<br/>Rejected" --> done
+
+    style start fill:#2d6a4f,stroke:#1b4332,color:#fff
+    style done fill:#2d6a4f,stroke:#1b4332,color:#fff
+    style orch fill:#264653,stroke:#1d3557,color:#fff
+    style build fill:#e76f51,stroke:#c1440e,color:#fff
+    style qa fill:#264653,stroke:#1d3557,color:#fff
+    style vis fill:#e9c46a,stroke:#d4a017,color:#000
+```
 
 ## Drive It Off The Lot Today (Getting Started)
 
