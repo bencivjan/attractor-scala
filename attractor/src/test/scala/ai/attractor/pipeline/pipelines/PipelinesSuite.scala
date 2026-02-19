@@ -21,7 +21,10 @@ class PipelinesSuite extends FunSuite:
 
   test("default pipeline has expected nodes") {
     val graph = DotParser.parse(Pipelines.default).toOption.get
-    val expectedNodes = List("start", "high_level_plan", "sprint_breakdown", "implement", "qa_verify", "exit")
+    val expectedNodes = List(
+      "start", "high_level_plan", "sprint_breakdown", "implement", "qa_verify",
+      "submit_for_evaluation", "evaluation_feedback", "exit"
+    )
     for id <- expectedNodes do
       assert(graph.nodes.contains(id), s"expected node '$id' not found in graph")
   }
@@ -52,7 +55,11 @@ class PipelinesSuite extends FunSuite:
   test("default pipeline validates without errors") {
     val graph = DotParser.parse(Pipelines.default).toOption.get
     val diags = Validator.validate(graph)
-    val errors = diags.filter(_.severity == Severity.Error)
+    // Communication nodes (inbound ports) are intentionally unreachable in standalone mode
+    val commNodeIds = graph.nodes.values.filter(_.nodeType == "communication").map(_.id).toSet
+    val errors = diags.filter(d =>
+      d.severity == Severity.Error && !d.nodeId.exists(commNodeIds.contains)
+    )
     assert(errors.isEmpty, s"default pipeline has validation errors: ${errors.map(_.message).mkString("; ")}")
   }
 
@@ -63,20 +70,35 @@ class PipelinesSuite extends FunSuite:
       ("start", "high_level_plan"),
       ("high_level_plan", "sprint_breakdown"),
       ("sprint_breakdown", "implement"),
-      ("implement", "qa_verify")
+      ("implement", "qa_verify"),
+      ("submit_for_evaluation", "exit"),
+      ("evaluation_feedback", "implement")
     )
 
     for (from, to) <- expectedEdges do
       val found = graph.edges.exists(e => e.from == from && e.to == to)
       assert(found, s"expected edge $from -> $to not found")
 
-    // QA pass/fail edges
-    val qaToExit = graph.edges.exists(e => e.from == "qa_verify" && e.to == "exit")
-    assert(qaToExit, "expected qa_verify -> exit edge")
+    // QA pass -> submit_for_evaluation
+    val qaToSubmit = graph.edges.exists(e => e.from == "qa_verify" && e.to == "submit_for_evaluation")
+    assert(qaToSubmit, "expected qa_verify -> submit_for_evaluation edge")
 
+    // QA fail -> implement (loop restart)
     val qaToImplement = graph.edges.filter(e => e.from == "qa_verify" && e.to == "implement")
     assert(qaToImplement.nonEmpty, "expected qa_verify -> implement feedback edge")
     assert(qaToImplement.head.loopRestart, "qa_verify -> implement edge should have loop_restart=true")
+  }
+
+  test("default pipeline communication nodes") {
+    val graph = DotParser.parse(Pipelines.default).toOption.get
+
+    val submit = graph.nodes("submit_for_evaluation")
+    assertEquals(submit.nodeType, "communication")
+    assertEquals(submit.attributes.get("direction"), Some("outbound"))
+
+    val feedback = graph.nodes("evaluation_feedback")
+    assertEquals(feedback.nodeType, "communication")
+    assertEquals(feedback.attributes.get("direction"), Some("inbound"))
   }
 
   test("evaluator pipeline parses and validates") {

@@ -67,7 +67,7 @@ digraph plan_build_verify {
     // -----------------------------------------------------------------------
     implement [
         label       = "Implement Code"
-        prompt      = "You are a senior software engineer. Implement the sprint plans from context as production-ready code.\n\nFor each sprint:\n1. Write clean, idiomatic code that satisfies every acceptance criterion\n2. Include unit tests for all public interfaces\n3. Follow the architecture and patterns from the high-level plan\n4. Add brief inline comments only where the logic is non-obvious\n5. Handle errors properly at system boundaries\n\nOutput all code files with their full paths. Do not skip any sprint."
+        prompt      = "You are a senior software engineer. Implement the sprint plans from context as production-ready code.\n\nIf evaluator feedback is present in context as $evaluator_feedback, address every issue the evaluator raised before proceeding with the sprint plans. The evaluator's feedback takes priority — fix the identified problems first, then continue with any remaining sprint work.\n\nFor each sprint:\n1. Write clean, idiomatic code that satisfies every acceptance criterion\n2. Include unit tests for all public interfaces\n3. Follow the architecture and patterns from the high-level plan\n4. Add brief inline comments only where the logic is non-obvious\n5. Handle errors properly at system boundaries\n\nOutput all code files with their full paths. Do not skip any sprint."
         model       = "gpt-5.3-codex"
         llm_provider = "openai"
         goal_gate   = "true"
@@ -93,6 +93,33 @@ digraph plan_build_verify {
     ]
 
     // -----------------------------------------------------------------------
+    // Communication — Outbound (submit to evaluator)
+    //
+    // In standalone mode this is a pass-through to exit. In the combined
+    // factory pipeline the evaluator takes over at this point.
+    // -----------------------------------------------------------------------
+    submit_for_evaluation [
+        shape     = "doubleoctagon"
+        type      = "communication"
+        direction = "outbound"
+        label     = "Submit for Evaluation"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Communication — Inbound (evaluator rejection feedback)
+    //
+    // In standalone mode this is an alternative entry point that is not
+    // reachable from start. In the combined factory pipeline the evaluator's
+    // visionary FAIL outcome routes here with rejection context.
+    // -----------------------------------------------------------------------
+    evaluation_feedback [
+        shape     = "doubleoctagon"
+        type      = "communication"
+        direction = "inbound"
+        label     = "Evaluation Feedback"
+    ]
+
+    // -----------------------------------------------------------------------
     // Exit
     // -----------------------------------------------------------------------
     exit [shape=Msquare, label="Done"]
@@ -105,8 +132,14 @@ digraph plan_build_verify {
     sprint_breakdown -> implement
     implement       -> qa_verify
 
-    // QA gate: pass exits, fail loops back to implementation with feedback.
-    qa_verify -> exit      [condition="outcome=success",          label="QA Passed",  weight="10"]
-    qa_verify -> exit      [condition="outcome=partial_success",  label="QA Passed (partial)", weight="5"]
-    qa_verify -> implement [condition="outcome=fail",             label="QA Failed",  weight="10", loop_restart="true"]
+    // QA gate: pass submits for evaluation, fail loops back to implementation.
+    qa_verify -> submit_for_evaluation [condition="outcome=success",          label="QA Passed",  weight="10"]
+    qa_verify -> submit_for_evaluation [condition="outcome=partial_success",  label="QA Passed (partial)", weight="5"]
+    qa_verify -> implement             [condition="outcome=fail",             label="QA Failed",  weight="10", loop_restart="true"]
+
+    // Outbound handoff flows through to exit in standalone mode.
+    submit_for_evaluation -> exit
+
+    // Inbound evaluation feedback feeds into implementation with rejection context.
+    evaluation_feedback -> implement
 }
