@@ -114,7 +114,10 @@ class PipelinesSuite extends FunSuite:
 
   test("evaluator pipeline has expected nodes") {
     val graph = DotParser.parse(Pipelines.get("evaluator").get).toOption.get
-    val expectedNodes = List("start", "orchestrator", "builder", "qa", "visionary", "exit")
+    val expectedNodes = List(
+      "start", "receive_submission", "orchestrator", "builder", "qa",
+      "visionary", "return_feedback", "exit"
+    )
     for id <- expectedNodes do
       assert(graph.nodes.contains(id), s"expected node '$id' not found in evaluator graph")
   }
@@ -124,10 +127,12 @@ class PipelinesSuite extends FunSuite:
 
     // Main flow
     val expectedEdges = List(
-      ("start", "orchestrator"),
+      ("start", "receive_submission"),
+      ("receive_submission", "orchestrator"),
       ("orchestrator", "builder"),
       ("builder", "qa"),
-      ("qa", "visionary")
+      ("qa", "visionary"),
+      ("return_feedback", "exit")
     )
     for (from, to) <- expectedEdges do
       val found = graph.edges.exists(e => e.from == from && e.to == to)
@@ -141,6 +146,23 @@ class PipelinesSuite extends FunSuite:
     val visionaryToOrchestrator = graph.edges.filter(e => e.from == "visionary" && e.to == "orchestrator")
     assert(visionaryToOrchestrator.nonEmpty, "expected visionary -> orchestrator retry edge")
     assertEquals(visionaryToOrchestrator.head.condition, "outcome=retry")
+
+    // Visionary -> return_feedback (rejection)
+    val visionaryToFeedback = graph.edges.filter(e => e.from == "visionary" && e.to == "return_feedback")
+    assert(visionaryToFeedback.nonEmpty, "expected visionary -> return_feedback edge")
+    assertEquals(visionaryToFeedback.head.condition, "outcome=fail")
+  }
+
+  test("evaluator pipeline communication nodes") {
+    val graph = DotParser.parse(Pipelines.get("evaluator").get).toOption.get
+
+    val receive = graph.nodes("receive_submission")
+    assertEquals(receive.nodeType, "communication")
+    assertEquals(receive.attributes.get("direction"), Some("inbound"))
+
+    val feedback = graph.nodes("return_feedback")
+    assertEquals(feedback.nodeType, "communication")
+    assertEquals(feedback.attributes.get("direction"), Some("outbound"))
   }
 
   test("get returns None for unknown pipeline") {

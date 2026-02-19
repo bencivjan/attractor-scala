@@ -32,6 +32,19 @@ digraph evaluator {
     start [shape=Mdiamond, label="Submission Received"]
 
     // -----------------------------------------------------------------------
+    // Communication — Inbound (receive developer submission)
+    //
+    // In standalone mode this is a pass-through from start. In the combined
+    // factory pipeline the developer's QA-passed output enters here.
+    // -----------------------------------------------------------------------
+    receive_submission [
+        shape     = "doubleoctagon"
+        type      = "communication"
+        direction = "inbound"
+        label     = "Receive Submission"
+    ]
+
+    // -----------------------------------------------------------------------
     // Phase 1 — Orchestrator (Claude Opus)
     //
     // Receives the submission and the project vision. Analyzes what needs
@@ -98,6 +111,20 @@ digraph evaluator {
     ]
 
     // -----------------------------------------------------------------------
+    // Communication — Outbound (return rejection feedback to developer)
+    //
+    // In standalone mode this flows through to exit. In the combined factory
+    // pipeline the rejection feedback routes back to the developer's
+    // implementation stage.
+    // -----------------------------------------------------------------------
+    return_feedback [
+        shape     = "doubleoctagon"
+        type      = "communication"
+        direction = "outbound"
+        label     = "Return Feedback"
+    ]
+
+    // -----------------------------------------------------------------------
     // Exit
     // -----------------------------------------------------------------------
     exit [shape=Msquare, label="Evaluation Complete"]
@@ -105,17 +132,21 @@ digraph evaluator {
     // -----------------------------------------------------------------------
     // Edges
     // -----------------------------------------------------------------------
-    start        -> orchestrator
-    orchestrator -> builder
-    builder      -> qa
-    qa           -> visionary
+    start              -> receive_submission
+    receive_submission -> orchestrator
+    orchestrator       -> builder
+    builder            -> qa
+    qa                 -> visionary
 
     // Visionary gate:
     //   - success exits with approval
     //   - retry loops back to orchestrator (evaluation was insufficient)
-    //   - fail exits with rejection feedback for the submitter
-    visionary -> exit         [condition="outcome=success",          label="Approved",              weight="10"]
-    visionary -> exit         [condition="outcome=partial_success",  label="Approved (partial)",     weight="5"]
-    visionary -> orchestrator [condition="outcome=retry",            label="Refine Evaluation",      weight="10"]
-    visionary -> exit         [condition="outcome=fail",             label="Rejected",              weight="10"]
+    //   - fail sends rejection feedback (outbound communication), then exits
+    visionary -> exit             [condition="outcome=success",          label="Approved",              weight="10"]
+    visionary -> exit             [condition="outcome=partial_success",  label="Approved (partial)",     weight="5"]
+    visionary -> orchestrator     [condition="outcome=retry",            label="Refine Evaluation",      weight="10"]
+    visionary -> return_feedback  [condition="outcome=fail",             label="Rejected",              weight="10"]
+
+    // Outbound feedback flows through to exit in standalone mode.
+    return_feedback -> exit
 }
