@@ -165,6 +165,45 @@ class PipelinesSuite extends FunSuite:
     assertEquals(feedback.attributes.get("direction"), Some("outbound"))
   }
 
+  test("factory pipeline parses and validates") {
+    val dot = Pipelines.get("factory")
+    assert(dot.isDefined, "factory pipeline should be registered")
+    val graph = DotParser.parse(dot.get).toOption.get
+    assertEquals(graph.name, "factory")
+
+    val diags = Validator.validate(graph)
+    val errors = diags.filter(_.severity == Severity.Error)
+    assert(errors.isEmpty, s"factory pipeline has validation errors: ${errors.map(_.message).mkString("; ")}")
+  }
+
+  test("factory pipeline has all developer and evaluator nodes") {
+    val graph = DotParser.parse(Pipelines.get("factory").get).toOption.get
+    val expectedNodes = List(
+      "start", "high_level_plan", "sprint_breakdown", "implement", "qa_verify",
+      "eval_orchestrator", "eval_builder", "eval_qa", "eval_visionary", "exit"
+    )
+    for id <- expectedNodes do
+      assert(graph.nodes.contains(id), s"expected node '$id' not found in factory graph")
+  }
+
+  test("factory pipeline cross-phase edges") {
+    val graph = DotParser.parse(Pipelines.get("factory").get).toOption.get
+
+    // QA pass hands off to evaluator
+    val qaToEvalOrch = graph.edges.exists(e => e.from == "qa_verify" && e.to == "eval_orchestrator")
+    assert(qaToEvalOrch, "expected qa_verify -> eval_orchestrator handoff edge")
+
+    // Eval visionary rejection feeds back to developer implementation
+    val evalVisToImpl = graph.edges.filter(e => e.from == "eval_visionary" && e.to == "implement")
+    assert(evalVisToImpl.nonEmpty, "expected eval_visionary -> implement rejection edge")
+    assertEquals(evalVisToImpl.head.condition, "outcome=fail")
+
+    // Eval visionary retry loops within evaluator
+    val evalVisToOrch = graph.edges.filter(e => e.from == "eval_visionary" && e.to == "eval_orchestrator")
+    assert(evalVisToOrch.nonEmpty, "expected eval_visionary -> eval_orchestrator retry edge")
+    assertEquals(evalVisToOrch.head.condition, "outcome=retry")
+  }
+
   test("get returns None for unknown pipeline") {
     assertEquals(Pipelines.get("nonexistent_pipeline"), None)
   }
@@ -179,4 +218,5 @@ class PipelinesSuite extends FunSuite:
     val allNames = Pipelines.names
     assert(allNames.contains(Pipelines.DefaultName), s"names should include '${Pipelines.DefaultName}'")
     assert(allNames.contains("evaluator"), "names should include 'evaluator'")
+    assert(allNames.contains("factory"), "names should include 'factory'")
   }

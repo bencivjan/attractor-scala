@@ -1,0 +1,225 @@
+// Factory Pipeline — Reference Diagram
+//
+// NOTE: This DOT file is a reference diagram showing the logical flow of the
+// combined developer + evaluator pipeline. Actual execution uses FactoryRunner
+// (attractor/factory), which runs developer.dot and evaluator.dot as separate,
+// context-isolated pipeline executions. Only explicitly defined context keys
+// cross the boundary between the two pipelines.
+//
+// The combined end-to-end pipeline that wires the developer and evaluator
+// pipelines together. The developer plans, implements, and QA-verifies code;
+// the evaluator reviews the result against the project vision. Evaluator
+// rejection feeds back to the developer's implementation stage.
+//
+// Model assignments:
+//   Code-producing stages use OpenAI Codex (gpt-5.3-codex) — the model
+//   optimised for writing and modifying source code. All reasoning,
+//   planning, review, and judgment stages use Claude Opus (claude-opus-4-6).
+//
+//   Codex stages:   implement, eval_builder
+//   Opus stages:    high_level_plan, sprint_breakdown, qa_verify,
+//                   eval_orchestrator, eval_qa, eval_visionary
+//
+// Orchestration:
+//   The evaluator phase should be kicked off and run by a completely
+//   separate orchestrator agent. The developer agent owns stages 1–4;
+//   once QA passes, a distinct evaluator agent takes ownership of
+//   stages 5–8. This separation ensures the evaluator has no shared
+//   state or bias from the developer's execution context — it receives
+//   only the submitted artifacts and the project vision, not the
+//   developer's internal planning or retry history.
+//
+// Stages (developer phase — developer agent):
+//   1. High-Level Plan     (Claude Opus)    — architecture and strategy
+//   2. Sprint Breakdown    (Claude Opus)    — decompose into sprint-sized work
+//   3. Implement           (Codex 5.3)      — write production code
+//   4. QA Verification     (Claude Opus)    — verify implementation matches plans
+//
+// Stages (evaluator phase — separate evaluator agent):
+//   5. Eval Orchestrator   (Claude Opus)    — receive submission, delegate tasks
+//   6. Eval Builder        (Codex 5.3)      — build tools/harnesses for QA
+//   7. Eval QA             (Claude Opus)    — run tools against the submission
+//   8. Eval Visionary      (Claude Opus)    — judge against goal, return feedback
+//
+// Feedback loops:
+//   - QA fail → implement (developer internal loop)
+//   - Eval visionary RETRY → eval_orchestrator (evaluation insufficient)
+//   - Eval visionary FAIL → implement (submission rejected, fix code)
+
+digraph factory {
+    goal = "Plan, implement, verify, and evaluate a software project or feature"
+    label = "Factory Pipeline (Developer + Evaluator)"
+    default_max_retry = "3"
+    fallback_retry_target = "sprint_breakdown"
+
+    model_stylesheet = "
+        * {
+            reasoning_effort: high;
+        }
+    "
+
+    // ===================================================================
+    // Developer Phase
+    // ===================================================================
+
+    // -----------------------------------------------------------------------
+    // Start
+    // -----------------------------------------------------------------------
+    start [shape=Mdiamond, label="Begin"]
+
+    subgraph cluster_developer {
+        label     = "Developer Agent"
+        style     = "dashed"
+        color     = "blue"
+        fontcolor = "blue"
+
+    // -----------------------------------------------------------------------
+    // Phase 1 — High-Level Planning (Claude Opus)
+    // -----------------------------------------------------------------------
+    high_level_plan [
+        label       = "High-Level Plan\n(Claude Opus)"
+        prompt      = "You are a senior software architect. Create a high-level overall plan for the project/feature described in $goal.\n\nYour plan must include:\n1. Requirements analysis — what needs to be built and why\n2. Architecture overview — major components and how they interact\n3. Technical decisions — languages, frameworks, patterns, data models\n4. Implementation strategy — phased approach with dependencies\n5. Risk assessment — what could go wrong and mitigations\n6. Definition of done — clear success criteria\n\nOutput a structured plan document. Be thorough but concise."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 2 — Sprint Breakdown (Claude Opus)
+    // -----------------------------------------------------------------------
+    sprint_breakdown [
+        label       = "Sprint Breakdown\n(Claude Opus)"
+        prompt      = "You are a technical project manager. Given the high-level plan in context, break it down into smaller, sprint-sized plans.\n\nFor each sprint produce:\n1. Sprint goal — one sentence describing what this sprint delivers\n2. Scope — specific items to build (files, functions, APIs, tests)\n3. Inputs — what must exist before this sprint starts\n4. Outputs — concrete deliverables produced\n5. Acceptance criteria — how to verify the sprint is complete\n6. Dependencies — which other sprints must finish first\n\nDo NOT include code. Focus on describing what needs to be built, the approach, and expected behavior. Order sprints by dependency so they can be executed sequentially."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 3 — Implementation (Codex)
+    // -----------------------------------------------------------------------
+    implement [
+        label       = "Implement Code\n(Codex 5.3)"
+        prompt      = "You are a senior software engineer. Implement the sprint plans from context as production-ready code.\n\nIf evaluator rejection feedback is present in context, address every issue the evaluator raised before proceeding with the sprint plans. The evaluator's feedback takes priority — fix the identified problems first, then continue with any remaining sprint work.\n\nFor each sprint:\n1. Write clean, idiomatic code that satisfies every acceptance criterion\n2. Include unit tests for all public interfaces\n3. Follow the architecture and patterns from the high-level plan\n4. Add brief inline comments only where the logic is non-obvious\n5. Handle errors properly at system boundaries\n\nOutput all code files with their full paths. Do not skip any sprint."
+        model       = "gpt-5.3-codex"
+        llm_provider = "openai"
+        goal_gate   = "true"
+        max_retries = "3"
+        retry_target = "implement"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 4 — QA Verification (Claude Opus)
+    // -----------------------------------------------------------------------
+    qa_verify [
+        shape       = "diamond"
+        type        = "conditional"
+        label       = "QA Verification\n(Claude Opus)"
+        prompt      = "You are a QA lead and code reviewer. Verify that the implementation matches both the sprint plans and the high-level plan.\n\nCheck each of the following:\n1. Sprint coverage — every sprint's acceptance criteria are met\n2. Architectural alignment — code follows the high-level plan's architecture\n3. Correctness — logic is sound, edge cases handled, no obvious bugs\n4. Completeness — no sprints skipped, no partial implementations\n5. Code quality — readable, maintainable, properly tested\n\nIf ALL checks pass: respond with status SUCCESS.\nIf ANY check fails: respond with status FAIL and list every specific issue found, referencing the sprint and acceptance criterion that was violated."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    } // end cluster_developer
+
+    // ===================================================================
+    // Evaluator Phase (separate orchestrator agent)
+    // ===================================================================
+
+    subgraph cluster_evaluator {
+        label     = "Evaluator Agent (separate orchestrator)"
+        style     = "dashed"
+        color     = "red"
+        fontcolor = "red"
+
+    // -----------------------------------------------------------------------
+    // Phase 5 — Orchestrator (Claude Opus)
+    // -----------------------------------------------------------------------
+    eval_orchestrator [
+        label       = "Eval Orchestrator\n(Claude Opus)"
+        prompt      = "You are an evaluation orchestrator. You have received a submission and the project's high-level vision in $goal.\n\nIf this is a fresh evaluation, start from scratch. If the visionary has returned feedback from a previous evaluation round, you MUST incorporate that feedback — the visionary's concerns take priority. Adjust your delegation plan to address every issue the visionary raised. Do not repeat evaluation approaches that already failed to surface the right information.\n\nYour job:\n1. Understand the submission — what was built, what changed, what claims are made\n2. Understand the vision — what the project is supposed to achieve\n3. If visionary feedback exists, understand what was unclear or insufficient in the previous evaluation and why\n4. Identify evaluation dimensions — correctness, completeness, alignment with vision, quality\n5. Produce a delegation plan with two sections:\n   a. BUILDER TASKS — specific tools, test harnesses, scripts, or fixtures the builder must create so QA can exercise the submission (e.g. integration tests, load generators, mock servers, CLI wrappers)\n   b. QA CHECKLIST — specific checks QA must perform using those tools, each tied to a success criterion from the vision\n\nBe precise. Every builder task must have a clear purpose and every QA check must be verifiable."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 6 — Builder (Codex 5.3)
+    // -----------------------------------------------------------------------
+    eval_builder [
+        label       = "Eval Builder\n(Codex 5.3)"
+        prompt      = "You are a toolsmith. Given the orchestrator's delegation plan in context, build every tool and harness listed under BUILDER TASKS.\n\nFor each tool:\n1. Write clean, runnable code that QA can invoke directly\n2. Include clear usage instructions (CLI flags, env vars, expected inputs/outputs)\n3. Handle setup and teardown so tools are self-contained\n4. Output structured results (JSON or plain-text with parseable markers) so QA can programmatically check outcomes\n5. Cover edge cases mentioned in the delegation plan\n\nDo NOT evaluate the submission yourself. Your only job is to produce the tools QA will use."
+        model       = "gpt-5.3-codex"
+        llm_provider = "openai"
+        goal_gate   = "true"
+        max_retries = "3"
+        retry_target = "eval_builder"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 7 — QA (Claude Opus)
+    // -----------------------------------------------------------------------
+    eval_qa [
+        label       = "Eval QA\n(Claude Opus)"
+        prompt      = "You are a QA engineer. Using the tools built by the builder and the QA CHECKLIST from the orchestrator, evaluate the submission.\n\nFor each checklist item:\n1. Run the relevant tool or harness against the submission\n2. Record the raw output\n3. Determine PASS or FAIL with a brief justification\n4. Note any unexpected behavior, even if the check passes\n\nProduce a structured evaluation report with:\n- Summary — overall pass/fail count and health assessment\n- Per-check results — checklist item, tool used, outcome, evidence\n- Observations — anything noteworthy not covered by the checklist\n\nBe objective. Report what happened, not what you think should happen."
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    // -----------------------------------------------------------------------
+    // Phase 8 — Visionary (Claude Opus)
+    // -----------------------------------------------------------------------
+    eval_visionary [
+        shape       = "diamond"
+        type        = "conditional"
+        label       = "Eval Visionary\n(Claude Opus)"
+        prompt      = "You are the visionary — the keeper of the project's high-level goal described in $goal. You have the QA evaluation report in context.\n\nYour job is to judge the submission against the vision, not just the checklist:\n1. Vision alignment — does the submission move the project toward its goal?\n2. Completeness — are there gaps between what was delivered and what the vision requires?\n3. Quality bar — does the work meet the standard the vision implies?\n4. Regression — does the submission break or weaken anything that previously worked?\n5. Evaluation quality — was the evaluation itself sufficient? Did the QA checklist and tools actually test the right things, or did the orchestrator miss critical dimensions?\n\nIf the submission SATISFIES the vision: respond with status SUCCESS and a brief summary of what was achieved.\n\nIf the EVALUATION ITSELF was insufficient (wrong tools, missing checks, unclear results, didn't test what matters to the vision): respond with status RETRY and provide feedback for the orchestrator:\n   a. What the evaluation failed to cover or got wrong\n   b. What dimensions the orchestrator should focus on in the next round\n   c. Specific tools or checks that should be added, changed, or removed\n   This feedback goes back to the orchestrator to refine the delegation plan.\n\nIf the submission FALLS SHORT and the evaluation was thorough: respond with status FAIL and provide structured feedback for the submitter:\n   a. What specifically is missing or wrong (reference QA evidence)\n   b. Why it matters to the vision\n   c. Concrete suggestions for what the submitter should do next"
+        model       = "claude-opus-4-6"
+        llm_provider = "anthropic"
+        goal_gate   = "true"
+        max_retries = "2"
+    ]
+
+    } // end cluster_evaluator
+
+    // ===================================================================
+    // Exit
+    // ===================================================================
+    exit [shape=Msquare, label="Done"]
+
+    // ===================================================================
+    // Edges — Developer Phase
+    // ===================================================================
+    start           -> high_level_plan
+    high_level_plan -> sprint_breakdown
+    sprint_breakdown -> implement
+    implement       -> qa_verify
+
+    // QA gate: pass hands off to evaluator, fail loops back to implementation.
+    qa_verify -> eval_orchestrator [condition="outcome=success",          label="QA Passed",          weight="10"]
+    qa_verify -> eval_orchestrator [condition="outcome=partial_success",  label="QA Passed (partial)", weight="5"]
+    qa_verify -> implement         [condition="outcome=fail",             label="QA Failed",          weight="10", loop_restart="true"]
+
+    // ===================================================================
+    // Edges — Evaluator Phase
+    // ===================================================================
+    eval_orchestrator -> eval_builder
+    eval_builder      -> eval_qa
+    eval_qa           -> eval_visionary
+
+    // Visionary gate:
+    //   - success/partial exits with approval
+    //   - retry loops back to orchestrator (evaluation was insufficient)
+    //   - fail sends rejection feedback back to developer implementation
+    eval_visionary -> exit              [condition="outcome=success",          label="Approved",          weight="10"]
+    eval_visionary -> exit              [condition="outcome=partial_success",  label="Approved (partial)", weight="5"]
+    eval_visionary -> eval_orchestrator [condition="outcome=retry",            label="Refine Evaluation",  weight="10"]
+    eval_visionary -> implement         [condition="outcome=fail",             label="Rejected",          weight="10"]
+}
