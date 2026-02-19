@@ -98,29 +98,35 @@ The `unified-llm` module talks to Anthropic, OpenAI, AND Gemini through a single
 - **Middleware** — Composable interceptors for logging, metrics, you name it. Stack 'em up like pancakes.
 - **Unified types** — Messages, content blocks, usage tracking — all identical across all three providers. Write it once. Run it everywhere. Where have I heard that before? Oh right — but this time it actually WORKS.
 
-## Included Pipelines (TWO Pipelines, No Extra Charge, TODAY ONLY)
+## Included Pipelines (THREE Pipelines, No Extra Charge, TODAY ONLY)
+
+You want diagrams? We got RENDERED PNGs in `attractor/src/main/resources/pipelines/`. But because I like you, here's the full mermaid treatment too.
 
 ### Plan-Build-Verify (`developer.dot`)
 
-A four-stage software development pipeline: planning (Claude Opus) -> sprint breakdown (Claude Opus) -> implementation (Codex) -> QA verification (Claude Opus). QA fails? Loops RIGHT back to implementation with feedback. Goal gates ensure nothing leaves this lot that isn't QUALITY.
+Four-stage software development pipeline with communication ports for factory integration. Planning (Claude Opus) -> sprint breakdown (Claude Opus) -> implementation (Codex) -> QA verification (Claude Opus). QA fails? Loops RIGHT back to implementation. QA passes? Hands off through `submit_for_evaluation`. Got evaluator rejection feedback coming in? `evaluation_feedback` feeds it straight into implementation. This thing is WIRED for the factory.
 
 ```mermaid
 flowchart TD
     start(["Begin"])
-    plan["<b>1. High-Level Plan</b><br/><i>claude-opus-4-6</i><br/>Architecture & strategy"]
-    sprints["<b>2. Sprint Breakdown</b><br/><i>claude-opus-4-6</i><br/>Decompose into sprints"]
-    impl["<b>3. Implement Code</b><br/><i>gpt-5.3-codex</i><br/>Write production code"]
-    qa{"<b>4. QA Verification</b><br/><i>claude-opus-4-6</i><br/>Verify vs. plans"}
+    plan["<b>1. High-Level Plan</b><br/><i>claude-opus-4-6</i>"]
+    sprints["<b>2. Sprint Breakdown</b><br/><i>claude-opus-4-6</i>"]
+    feedback[/"<b>Evaluation Feedback</b><br/><i>inbound comm</i>"\]
+    impl["<b>3. Implement Code</b><br/><i>gpt-5.3-codex</i>"]
+    qa{"<b>4. QA Verification</b><br/><i>claude-opus-4-6</i>"}
+    submit[\"<b>Submit for Evaluation</b><br/><i>outbound comm</i>"/]
     done(["Done"])
 
     start --> plan
     plan --> sprints
     sprints --> impl
+    feedback --> impl
     impl --> qa
 
-    qa -- "outcome=success<br/>QA Passed" --> done
-    qa -- "outcome=partial_success<br/>QA Passed (partial)" --> done
-    qa -. "outcome=fail<br/>QA Failed (loop_restart)" .-> impl
+    qa -- "QA Passed" --> submit
+    qa -- "QA Passed (partial)" --> submit
+    qa -. "QA Failed<br/>(loop_restart)" .-> impl
+    submit --> done
 
     style start fill:#2d6a4f,stroke:#1b4332,color:#fff
     style done fill:#2d6a4f,stroke:#1b4332,color:#fff
@@ -128,30 +134,36 @@ flowchart TD
     style sprints fill:#264653,stroke:#1d3557,color:#fff
     style impl fill:#e76f51,stroke:#c1440e,color:#fff
     style qa fill:#e9c46a,stroke:#d4a017,color:#000
+    style submit fill:#7b2d8e,stroke:#5a1d6e,color:#fff
+    style feedback fill:#7b2d8e,stroke:#5a1d6e,color:#fff
 ```
 
 ### Evaluator (`evaluator.dot`)
 
-Four-stage evaluation pipeline: orchestration -> tool building -> QA testing -> visionary judgment. The visionary holds the high-level goal and hands back structured, actionable feedback. It's like having a senior architect on call 24/7 except this one doesn't take PTO. And NOW — fresh off the Go lot — the visionary can loop BACK to the orchestrator when the evaluation itself wasn't good enough. That's right, this pipeline doesn't just evaluate your code, it evaluates its OWN evaluation. Meta-quality. You cannot GET this at the Python dealership.
+Four-stage evaluation pipeline with communication ports. Receives submissions through `receive_submission`, orchestrates -> builds tools -> QA tests -> visionary judges. Visionary can loop BACK to orchestrator when the evaluation itself wasn't good enough. Rejection goes out through `return_feedback`. This pipeline evaluates its OWN evaluation. Meta-quality. You cannot GET this at the Python dealership.
 
 ```mermaid
 flowchart TD
     start(["Submission Received"])
-    orch["<b>1. Orchestrator</b><br/><i>claude-opus-4-6</i><br/>Delegate evaluation tasks"]
-    build["<b>2. Builder</b><br/><i>gpt-5.3-codex</i><br/>Build test tools & harnesses"]
-    qa["<b>3. QA</b><br/><i>claude-opus-4-6</i><br/>Run tools, produce report"]
-    vis{"<b>4. Visionary</b><br/><i>claude-opus-4-6</i><br/>Judge against vision"}
+    recv[/"<b>Receive Submission</b><br/><i>inbound comm</i>"\]
+    orch["<b>1. Orchestrator</b><br/><i>claude-opus-4-6</i>"]
+    build["<b>2. Builder</b><br/><i>gpt-5.3-codex</i>"]
+    qa["<b>3. QA</b><br/><i>claude-opus-4-6</i>"]
+    vis{"<b>4. Visionary</b><br/><i>claude-opus-4-6</i>"}
+    ret[\"<b>Return Feedback</b><br/><i>outbound comm</i>"/]
     done(["Evaluation Complete"])
 
-    start --> orch
+    start --> recv
+    recv --> orch
     orch --> build
     build --> qa
     qa --> vis
 
-    vis -- "outcome=success<br/>Approved" --> done
-    vis -- "outcome=partial_success<br/>Approved (partial)" --> done
-    vis -. "outcome=retry<br/>Refine Evaluation" .-> orch
-    vis -- "outcome=fail<br/>Rejected" --> done
+    vis -- "Approved" --> done
+    vis -- "Approved (partial)" --> done
+    vis -. "Refine Evaluation" .-> orch
+    vis -- "Rejected" --> ret
+    ret --> done
 
     style start fill:#2d6a4f,stroke:#1b4332,color:#fff
     style done fill:#2d6a4f,stroke:#1b4332,color:#fff
@@ -159,6 +171,64 @@ flowchart TD
     style build fill:#e76f51,stroke:#c1440e,color:#fff
     style qa fill:#264653,stroke:#1d3557,color:#fff
     style vis fill:#e9c46a,stroke:#d4a017,color:#000
+    style recv fill:#7b2d8e,stroke:#5a1d6e,color:#fff
+    style ret fill:#7b2d8e,stroke:#5a1d6e,color:#fff
+```
+
+### Factory (`factory.dot`)
+
+NOW we're talking. This is the FLAGSHIP. The crown jewel. The one that makes the Go lot WEEP. This is the developer AND evaluator pipelines WIRED TOGETHER into a single end-to-end software factory. Eight stages. Two agent phases. Cross-phase feedback loops. The developer builds it, the evaluator judges it, and if the visionary says NO? The rejection goes RIGHT back to `implement` with specific feedback. It's a CLOSED LOOP of continuous improvement and I am NOT kidding when I say this is the most sophisticated pipeline on any lot in this CITY.
+
+```mermaid
+flowchart TD
+    start(["Begin"])
+
+    subgraph dev ["Developer Agent"]
+        plan["<b>1. High-Level Plan</b><br/><i>Claude Opus</i>"]
+        sprints["<b>2. Sprint Breakdown</b><br/><i>Claude Opus</i>"]
+        impl["<b>3. Implement Code</b><br/><i>Codex 5.3</i>"]
+        qa{"<b>4. QA Verification</b><br/><i>Claude Opus</i>"}
+    end
+
+    subgraph eval ["Evaluator Agent (separate orchestrator)"]
+        eorch["<b>5. Eval Orchestrator</b><br/><i>Claude Opus</i>"]
+        ebuild["<b>6. Eval Builder</b><br/><i>Codex 5.3</i>"]
+        eqa["<b>7. Eval QA</b><br/><i>Claude Opus</i>"]
+        evis{"<b>8. Eval Visionary</b><br/><i>Claude Opus</i>"}
+    end
+
+    done(["Done"])
+
+    start --> plan
+    plan --> sprints
+    sprints --> impl
+    impl --> qa
+
+    qa -- "QA Passed" --> eorch
+    qa -- "QA Passed (partial)" --> eorch
+    qa -. "QA Failed<br/>(loop_restart)" .-> impl
+
+    eorch --> ebuild
+    ebuild --> eqa
+    eqa --> evis
+
+    evis -- "Approved" --> done
+    evis -- "Approved (partial)" --> done
+    evis -. "Refine Evaluation" .-> eorch
+    evis -. "Rejected" .-> impl
+
+    style start fill:#2d6a4f,stroke:#1b4332,color:#fff
+    style done fill:#2d6a4f,stroke:#1b4332,color:#fff
+    style plan fill:#264653,stroke:#1d3557,color:#fff
+    style sprints fill:#264653,stroke:#1d3557,color:#fff
+    style impl fill:#e76f51,stroke:#c1440e,color:#fff
+    style qa fill:#e9c46a,stroke:#d4a017,color:#000
+    style eorch fill:#264653,stroke:#1d3557,color:#fff
+    style ebuild fill:#e76f51,stroke:#c1440e,color:#fff
+    style eqa fill:#264653,stroke:#1d3557,color:#fff
+    style evis fill:#e9c46a,stroke:#d4a017,color:#000
+    style dev fill:#1d3557,stroke:#264653,color:#fff
+    style eval fill:#6b1d1d,stroke:#8b2500,color:#fff
 ```
 
 ## Drive It Off The Lot Today (Getting Started)
