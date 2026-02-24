@@ -1,0 +1,166 @@
+// Sprint Execution: Implement -> Review -> Commit Loop
+//
+// Executes sprint plans as a task-by-task loop. Each task is implemented,
+// tested, reviewed, and committed before moving to the next. After all
+// tasks complete, a final test suite and human sign-off gate verify the
+// sprint as a whole.
+//
+// Loops:
+//   - Inner loop: Select Task -> Implement -> Test -> Review -> Commit
+//   - Regression loop: Final Tests fail -> Fix Regression -> Re-verify
+//
+// Gates:
+//   - Code Review    [R] — human reviews each task before commit
+//   - Human Sign-Off [A] — human approves the completed sprint
+
+digraph sprint_execution {
+    label = "Sprint Execution: Implement → Review → Commit Loop"
+    rankdir = TB
+
+    // -------------------------------------------------------------------
+    // Start
+    // -------------------------------------------------------------------
+    start [shape=Mdiamond, label="Start"]
+
+    // -------------------------------------------------------------------
+    // Phase 1 — Load and Decompose
+    //
+    // Load the sprint plan(s) and break them into individual work units
+    // that can be implemented and committed one at a time.
+    // -------------------------------------------------------------------
+    load_plans [
+        label = "Load Sprint Plan(s)"
+    ]
+
+    decompose [
+        label = "Decompose into Work Units"
+    ]
+
+    // -------------------------------------------------------------------
+    // Task Selection Gate
+    //
+    // Conditional: picks the next task if work remains, or moves to
+    // sprint-level verification once all tasks are complete.
+    // -------------------------------------------------------------------
+    select_next_task [
+        shape = "diamond"
+        type  = "conditional"
+        label = "Select Next Task"
+    ]
+
+    // -------------------------------------------------------------------
+    // Phase 2 — Implement + Test Loop
+    //
+    // Write code for the selected task, run tests. On failure, loop
+    // back to implementation with revision feedback.
+    // -------------------------------------------------------------------
+    implement [
+        label = "Implement"
+    ]
+
+    run_tests [
+        label = "Run Tests"
+    ]
+
+    tests_pass [
+        shape = "diamond"
+        type  = "conditional"
+        label = "Tests Pass?"
+    ]
+
+    // -------------------------------------------------------------------
+    // Phase 3 — Code Review + Commit
+    //
+    // Human review gate. On approval, stage changes and commit.
+    // The loop then returns to task selection.
+    //
+    // PERMISSION: The tool nodes below are explicitly authorized to
+    // create git commits. This is intentional — each task produces a
+    // focused, reviewable commit before moving to the next task.
+    // -------------------------------------------------------------------
+    code_review [
+        shape     = "hexagon"
+        label     = "Code Review"
+        goal_gate = "true"
+    ]
+
+    stage_changes [
+        shape        = "parallelogram"
+        type         = "tool"
+        label        = "Stage Changes"
+        tool_command = "git add -A && git diff --cached --stat"
+        tool_timeout = "30"
+    ]
+
+    git_commit [
+        shape        = "parallelogram"
+        type         = "tool"
+        label        = "Git Commit"
+        tool_command = "git diff --cached --quiet --exit-code && echo 'Nothing to commit' && exit 0 || git commit -m 'sprint: $goal'"
+        tool_timeout = "30"
+    ]
+
+    // -------------------------------------------------------------------
+    // Phase 4 — Sprint Verification
+    //
+    // After all tasks are done, run the full test suite. On regression
+    // failure, loop back to fix. On pass, human sign-off gate.
+    // -------------------------------------------------------------------
+    verify_sprint_dod [
+        label = "Verify Sprint DoD"
+    ]
+
+    final_test_suite [
+        label = "Final Test Suite"
+    ]
+
+    final_tests_pass [
+        shape = "diamond"
+        type  = "conditional"
+        label = "Final Tests Pass?"
+    ]
+
+    human_sign_off [
+        shape     = "hexagon"
+        label     = "Human Sign-Off"
+        goal_gate = "true"
+    ]
+
+    // -------------------------------------------------------------------
+    // Exit
+    // -------------------------------------------------------------------
+    done [shape=Msquare, label="Done"]
+
+    // -------------------------------------------------------------------
+    // Edges
+    // -------------------------------------------------------------------
+    start     -> load_plans
+    load_plans -> decompose
+    decompose  -> select_next_task
+
+    // Task selection: continue working or move to sprint verification
+    select_next_task -> implement         [label="Continue"]
+    select_next_task -> verify_sprint_dod [label="Sprint Complete"]
+
+    // Implement + test loop
+    implement  -> run_tests
+    run_tests  -> tests_pass
+    tests_pass -> implement              [label="Fail",  loop_restart="true"]
+    tests_pass -> code_review            [label="Pass"]
+
+    // Review gate: revise loops back to implement, approve proceeds to commit
+    code_review          -> implement            [label="[R] Revise", loop_restart="true"]
+    code_review          -> stage_changes [label="Approved"]
+    stage_changes -> git_commit
+    git_commit           -> select_next_task
+
+    // Sprint verification
+    verify_sprint_dod -> final_test_suite
+    final_test_suite  -> final_tests_pass
+    final_tests_pass  -> verify_sprint_dod [label="Fail — Fix Regression", loop_restart="true"]
+    final_tests_pass  -> human_sign_off    [label="Pass"]
+
+    // Final human approval: revise loops back to fix issues, approve completes
+    human_sign_off -> select_next_task [label="[R] Revise", loop_restart="true"]
+    human_sign_off -> done             [label="[A] Approve"]
+}
