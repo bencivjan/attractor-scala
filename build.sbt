@@ -8,6 +8,7 @@ val catsEffectVersion = "3.5.7"
 val fs2Version = "3.11.0"
 val munitVersion = "1.0.3"
 val munitCEVersion = "2.0.0"
+val declineVersion = "2.4.1"
 
 lazy val commonSettings = Seq(
   libraryDependencies ++= Seq(
@@ -61,6 +62,14 @@ lazy val attractor = (project in file("attractor"))
     commonSettings,
     libraryDependencies ++= Seq(
       "org.http4s" %% "http4s-ember-server" % http4sVersion,
-      "org.http4s" %% "http4s-dsl" % http4sVersion
-    )
+      "org.http4s" %% "http4s-dsl" % http4sVersion,
+      "com.monovore" %% "decline-effect" % declineVersion
+    ),
+    Compile / mainClass := Some("ai.attractor.pipeline.cli.Main"),
+    assembly / mainClass := Some("ai.attractor.pipeline.cli.Main"),
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+      case "module-info.class"           => MergeStrategy.discard
+      case x                             => MergeStrategy.first
+    }
   )
