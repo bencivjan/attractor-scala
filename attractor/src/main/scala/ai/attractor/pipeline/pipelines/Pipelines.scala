@@ -23,6 +23,12 @@ object Pipelines:
   private lazy val factoryDot: String =
     loadResource("/pipelines/factory.dot")
 
+  private lazy val megaplanDot: String =
+    loadResource("/pipelines/megaplan.dot")
+
+  private lazy val sprintExecutionDot: String =
+    loadResource("/pipelines/sprint-execution.dot")
+
   // Mutable catalog seeded with the built-in pipelines
   private val catalog: scala.collection.mutable.Map[String, String] =
     scala.collection.mutable.Map.empty
@@ -32,6 +38,8 @@ object Pipelines:
       catalog(DefaultName) = developerDot
       catalog("evaluator") = evaluatorDot
       catalog("factory") = factoryDot
+      catalog("megaplan") = megaplanDot
+      catalog("sprint_execution") = sprintExecutionDot
 
   /** Returns the DOT source for the default Plan-Build-Verify pipeline. */
   def default: String =
