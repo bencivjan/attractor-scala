@@ -57,6 +57,7 @@ digraph sprint_execution {
     // -------------------------------------------------------------------
     implement [
         label = "Implement"
+        model = "gpt-5.2-codex"
     ]
 
     run_tests [
@@ -82,6 +83,7 @@ digraph sprint_execution {
     code_review [
         shape     = "hexagon"
         label     = "Code Review"
+        model     = "claude-opus-4-6"
         goal_gate = "true"
     ]
 
@@ -125,7 +127,7 @@ digraph sprint_execution {
         shape        = "parallelogram"
         type         = "tool"
         label        = "Run Linters"
-        tool_command = "make golangci-lint"
+        tool_command = "make lint-golangci"
         tool_timeout = "120"
     ]
 
