@@ -8,6 +8,7 @@
 // Loops:
 //   - Inner loop: Select Task -> Implement -> Test -> Review -> Commit
 //   - Regression loop: Final Tests fail -> Fix Regression -> Re-verify
+//   - Linter loop: Linters fail -> back to Select Task to fix lint issues
 //
 // Gates:
 //   - Code Review    [R] — human reviews each task before commit
@@ -120,6 +121,20 @@ digraph sprint_execution {
         label = "Final Tests Pass?"
     ]
 
+    run_linters [
+        shape        = "parallelogram"
+        type         = "tool"
+        label        = "Run Linters"
+        tool_command = "make golangci-lint"
+        tool_timeout = "120"
+    ]
+
+    linters_pass [
+        shape = "diamond"
+        type  = "conditional"
+        label = "Linters Pass?"
+    ]
+
     human_sign_off [
         shape     = "hexagon"
         label     = "Human Sign-Off"
@@ -158,7 +173,12 @@ digraph sprint_execution {
     verify_sprint_dod -> final_test_suite
     final_test_suite  -> final_tests_pass
     final_tests_pass  -> verify_sprint_dod [label="Fail — Fix Regression", loop_restart="true"]
-    final_tests_pass  -> human_sign_off    [label="Pass"]
+    final_tests_pass  -> run_linters       [label="Pass"]
+
+    // Linter verification
+    run_linters   -> linters_pass
+    linters_pass  -> select_next_task [label="Fail", loop_restart="true"]
+    linters_pass  -> human_sign_off   [label="Pass"]
 
     // Final human approval: revise loops back to fix issues, approve completes
     human_sign_off -> select_next_task [label="[R] Revise", loop_restart="true"]
