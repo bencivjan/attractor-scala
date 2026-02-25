@@ -1,0 +1,117 @@
+// Mega Plan: Three-Way Consensus Planning
+//
+// Multi-agent collaborative planning pipeline that drafts with Claude,
+// dispatches competing drafts to Codex and Gemini, then merges all three
+// into a consensus plan via three-way merge.
+//
+// Stages:
+//   1. Orient + Write Intent     — understand context and define goals
+//   2. Claude Draft + Interview  — initial draft with human review gate
+//   3. Competing Drafts          — parallel Codex and Gemini drafts
+//   4. Three-Way Merge + Review  — merge all drafts, final human approval
+
+digraph megaplan {
+    label = "Mega Plan: Three-Way Consensus Planning"
+    rankdir = TB
+
+    // -------------------------------------------------------------------
+    // Start
+    // -------------------------------------------------------------------
+    start [shape=Mdiamond, label="Start"]
+
+    // -------------------------------------------------------------------
+    // Phase 1 — Orient and Write Intent
+    //
+    // Gather context about the codebase and task, then produce a clear
+    // intent statement that guides all subsequent drafting.
+    // -------------------------------------------------------------------
+    orient [
+        label = "Orient"
+    ]
+
+    write_intent [
+        label = "Write Intent"
+    ]
+
+    // -------------------------------------------------------------------
+    // Phase 2 — Claude Draft + Interview
+    //
+    // Claude produces the initial draft. A human interview gate allows
+    // revision before dispatching competing drafts.
+    // -------------------------------------------------------------------
+    claude_draft [
+        label = "Claude Draft"
+    ]
+
+    interview [
+        shape     = "hexagon"
+        label     = "Interview"
+        goal_gate = "true"
+    ]
+
+    // -------------------------------------------------------------------
+    // Phase 3 — Competing Drafts (Parallel)
+    //
+    // Dispatch the approved intent to Codex and Gemini in parallel.
+    // Each produces an independent draft and self-critique.
+    // -------------------------------------------------------------------
+    dispatch [
+        shape = "component"
+        label = "Dispatch Competing Drafts"
+    ]
+
+    codex_draft [
+        label = "Codex: Draft + Critique"
+    ]
+
+    gemini_draft [
+        label = "Gemini: Draft + Critique"
+    ]
+
+    collect [
+        shape = "hexagon"
+        label = "Collect Competing Drafts"
+    ]
+
+    // -------------------------------------------------------------------
+    // Phase 4 — Three-Way Merge + Final Review
+    //
+    // Merge Claude, Codex, and Gemini drafts into a consensus plan.
+    // Human final review gate before completion.
+    // -------------------------------------------------------------------
+    three_way_merge [
+        label = "Three-Way Merge"
+    ]
+
+    final_review [
+        shape     = "hexagon"
+        label     = "Final Review"
+        goal_gate = "true"
+    ]
+
+    // -------------------------------------------------------------------
+    // Exit
+    // -------------------------------------------------------------------
+    done [shape=Msquare, label="Done"]
+
+    // -------------------------------------------------------------------
+    // Edges
+    // -------------------------------------------------------------------
+    start        -> orient
+    orient       -> write_intent
+    write_intent -> claude_draft
+    claude_draft -> interview         [label="[R] Revise"]
+    interview    -> dispatch          [label="[A] Approve"]
+
+    // Parallel dispatch to competing agents
+    dispatch     -> codex_draft
+    dispatch     -> gemini_draft
+
+    // Collect results
+    codex_draft  -> collect
+    gemini_draft -> collect
+
+    collect         -> three_way_merge
+    three_way_merge -> final_review   [label="[R] Revise"]
+    final_review    -> done           [label="[A] Approve"]
+}
