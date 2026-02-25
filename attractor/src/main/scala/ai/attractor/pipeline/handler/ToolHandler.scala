@@ -34,7 +34,9 @@ object ToolHandler extends Handler:
 
       for
         _ <- IO.blocking(Files.createDirectories(stageDir))
-        result <- runShellCommand(command, cwd, timeoutSec)
+        ctxSnapshot <- context.snapshot
+        envVars = ctxSnapshot.map((k, v) => k -> v.toString)
+        result <- runShellCommand(command, cwd, timeoutSec, envVars)
         (exitCode, stdout, stderr) = result
         _ <- IO.blocking(Files.writeString(stageDir.resolve("stdout.txt"), stdout))
         _ <- IO.blocking(Files.writeString(stageDir.resolve("stderr.txt"), stderr))
@@ -62,11 +64,13 @@ object ToolHandler extends Handler:
   private def runShellCommand(
       command: String,
       cwd: Option[String],
-      timeoutSec: Long
+      timeoutSec: Long,
+      env: Map[String, String] = Map.empty
   ): IO[(Int, String, String)] =
     IO.blocking:
       val pb = new ProcessBuilder("sh", "-c", command)
       cwd.foreach(d => pb.directory(new java.io.File(d)))
+      env.foreach((k, v) => pb.environment().put(k, v))
       pb.redirectErrorStream(false)
       val process = pb.start()
 
